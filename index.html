@@ -1,0 +1,1345 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AI in Test</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+  <style>
+:root {
+  /* defaults; film.js overwrites these from the active theme */
+  --bg: #fde8d7;
+  --card: #fffaf6;
+  --ink: #1e1b3a;
+  --muted: #7d7397;
+  --title-shadow: #ff7a59;
+  --accent: #e39b00;   /* set per agent by film.js */
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body { overflow: hidden; background: var(--bg); color: var(--ink); font-family: 'VT323', monospace; }
+
+#film { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+
+/* Overlays start hidden; film.js sets opacity/transform every frame from the timeline. */
+.title, .bug, .steps, .human, .card, .tasks, .stamp { position: fixed; opacity: 0; pointer-events: none; will-change: transform, opacity; }
+
+/* ---------- Title cards ---------- */
+.title { left: 0; right: 0; top: 12vh; text-align: center; }
+.title-main { font-family: 'Press Start 2P', monospace; font-size: clamp(34px, 8.5vw, 124px); color: var(--ink); letter-spacing: .04em; line-height: 1.1; }
+.title-main span { display: inline-block; text-shadow: .06em .06em 0 var(--title-shadow); will-change: transform, opacity; }
+.title-sub { margin-top: 2.2vh; font-family: 'Press Start 2P', monospace; font-size: clamp(10px, 1.2vw, 16px); letter-spacing: .3em; color: var(--muted); }
+.final .title-main { font-size: clamp(18px, 5vw, 80px); }
+
+.bug { top: 22px; left: 26px; font-family: 'Press Start 2P', monospace; font-size: 11px; letter-spacing: .25em; color: var(--ink); }
+
+/* ---------- Step bar: the pipeline's direction, left to right ---------- */
+.steps { top: 16px; left: 50%; display: flex; align-items: center; list-style: none; font-family: 'Press Start 2P', monospace; font-size: 10px; letter-spacing: .08em; }
+.steps li { position: relative; padding: 8px 10px; color: var(--muted); }
+.steps li + li { margin-left: 22px; }
+.steps li + li::before { content: '>'; position: absolute; left: -17px; color: var(--muted); }   /* separator sits between boxes */
+.steps li.done { color: var(--ink); }
+.steps li.active { color: #fff; background: var(--c); }
+.steps li.retry { margin-left: 18px; color: #fff; background: #d64545; opacity: 0; }
+.steps li.retry::before { content: none; }
+.steps li.retry.fixed { background: #2a9d4f; }
+
+/* ---------- Human message ---------- */
+.human {
+  left: 7vw; bottom: 17vh; width: min(560px, 42vw);
+  background: var(--card); padding: 18px 22px 16px;
+  box-shadow: 0 -4px 0 var(--ink), 0 4px 0 var(--ink), -4px 0 0 var(--ink), 4px 0 0 var(--ink), 10px 12px 0 rgba(42, 34, 56, .18);
+}
+.human-head { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+.human-head canvas { width: 48px; height: 48px; image-rendering: pixelated; }
+.human-head b { display: block; font-family: 'Press Start 2P', monospace; font-size: 14px; }
+.human-head small { font-family: 'Press Start 2P', monospace; font-size: 9px; color: var(--muted); letter-spacing: .15em; }
+.human-msg { font-size: clamp(24px, 2.3vw, 34px); line-height: 1.05; min-height: 2.1em; }
+.caret { display: inline-block; width: .45em; height: .9em; margin-left: 2px; vertical-align: -.1em; background: var(--ink); }
+.human-foot { display: flex; justify-content: flex-end; margin-top: 10px; }
+.human-send { font-family: 'Press Start 2P', monospace; font-size: 11px; color: var(--card); background: var(--ink); padding: 10px 14px; display: inline-block; }
+
+/* ---------- Character screen: Kiro on the left, this text on the right ---------- */
+.card, .tasks { left: 52vw; right: 5vw; top: 17vh; }
+.card-num { font-family: 'Press Start 2P', monospace; font-size: 12px; letter-spacing: .3em; color: var(--ink); opacity: .6; margin-bottom: 14px; }
+.card-name { font-family: 'Press Start 2P', monospace; font-weight: 400; font-size: clamp(40px, 6.4vw, 96px); line-height: 1; color: var(--ink); text-shadow: .07em .07em 0 var(--accent); }
+.card-role { display: block; margin-bottom: .35em; font-size: .42em; letter-spacing: .06em; text-shadow: .1em .1em 0 var(--accent); }
+.card-about { max-width: 34em; margin: 30px 0 22px; font-size: clamp(22px, 2vw, 31px); line-height: 1.15; color: var(--ink); }
+.card-rows { display: grid; grid-template-columns: auto 1fr; gap: 4px 22px; font-size: clamp(19px, 1.6vw, 25px); }
+.card-rows dt { color: var(--muted); }
+.card-about, .card-rows dt, .card-rows dd { will-change: transform, opacity; }
+
+.tasks-head { font-family: 'Press Start 2P', monospace; font-size: 12px; letter-spacing: .25em; margin-bottom: 14px; }
+.tasks-head .kind { padding: 4px 7px; margin: 0 4px; color: var(--card); letter-spacing: .15em; }
+.tasks-head .kind.task { background: var(--accent); }
+.tasks-head .kind.check { background: var(--ink); }
+.job-title { font-family: 'Press Start 2P', monospace; font-weight: 400; font-size: clamp(14px, 1.6vw, 22px); line-height: 1.3; color: var(--ink); margin-bottom: 18px; }
+.tasks ol { list-style: none; display: grid; gap: 14px; max-width: 640px; }
+.tasks li {
+  display: flex; align-items: center; gap: 14px;
+  padding: 10px 16px; background: var(--card);
+  font-size: clamp(22px, 2.1vw, 32px); line-height: 1.1;
+  box-shadow: 0 -3px 0 var(--ink), 0 3px 0 var(--ink), -3px 0 0 var(--ink), 3px 0 0 var(--ink), 6px 7px 0 rgba(42, 34, 56, .16);
+  opacity: 0; will-change: transform, opacity;
+}
+.tasks li .ix { flex: none; font-family: 'Press Start 2P', monospace; font-size: 11px; color: var(--card); background: var(--accent); padding: 6px 7px; }
+.tasks li .txt { flex: 1; }
+.tasks li .st { flex: none; width: 28px; height: 22px; position: relative; font-family: 'Press Start 2P', monospace; font-size: 11px; color: var(--muted); }
+.tasks li.bad { box-shadow: 0 -3px 0 #d64545, 0 3px 0 #d64545, -3px 0 0 #d64545, 3px 0 0 #d64545, 6px 7px 0 rgba(42, 34, 56, .16); }
+.tasks li .st.bad::before, .tasks li .st.bad::after {   /* pixel cross */
+  content: ''; position: absolute; left: 11px; top: -1px; width: 5px; height: 22px; background: #d64545; transform: rotate(45deg);
+}
+.tasks li .st.bad::after { transform: rotate(-45deg); }
+.tasks li .st.ok::after {   /* pixel check mark */
+  content: ''; position: absolute; left: 7px; top: -1px; width: 9px; height: 17px;
+  border-right: 5px solid #2a9d4f; border-bottom: 5px solid #2a9d4f; transform: rotate(40deg);
+}
+
+.stamp {
+  left: 54vw; top: 70vh; padding: 16px 24px;
+  font-family: 'Press Start 2P', monospace; font-size: clamp(20px, 3vw, 44px); letter-spacing: .06em;
+  color: var(--stamp, var(--accent)); background: var(--card);
+  box-shadow: 0 -6px 0 var(--stamp, var(--accent)), 0 6px 0 var(--stamp, var(--accent)), -6px 0 0 var(--stamp, var(--accent)), 6px 0 0 var(--stamp, var(--accent)), 10px 12px 0 rgba(42, 34, 56, .18);
+}
+
+/* ---------- Player (auto-hides while playing) ---------- */
+.player {
+  position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+  width: min(900px, calc(100vw - 32px));
+  display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+  background: rgba(20, 14, 34, .82); color: #efe6d2; border-radius: 10px;
+  font-family: 'Press Start 2P', monospace; font-size: 10px;
+  transition: opacity .3s;
+}
+body.idle .player { opacity: 0; }
+body.idle { cursor: none; }
+.player button { flex: none; width: 34px; height: 30px; border: 0; border-radius: 6px; background: #3b2a5e; color: inherit; font-size: 14px; cursor: pointer; }
+.player button:hover { background: #4d3878; }
+.player button svg { display: block; margin: auto; }
+.player button.wide { width: auto; padding: 0 10px; font-family: 'Press Start 2P', monospace; font-size: 9px; }
+.player button:focus-visible, .scrub input:focus-visible { outline: 2px solid #ffd23f; outline-offset: 2px; }
+.time { flex: none; min-width: 108px; font-variant-numeric: tabular-nums; }
+.scrub { position: relative; flex: 1; height: 30px; display: flex; align-items: center; }
+.scrub input { width: 100%; accent-color: #b98cff; cursor: pointer; }
+.marks { position: absolute; left: 0; right: 0; top: -2px; height: 6px; pointer-events: none; }
+.marks i { position: absolute; top: 0; width: 2px; height: 6px; background: #b98cff; }
+
+@media (max-width: 760px) {
+  /* portrait: Kiro on top, text below */
+  .card, .tasks { left: 6vw; right: 6vw; top: 50vh; }
+  .stamp { left: 8vw; top: 84vh; }
+  .human { left: 5vw; right: 5vw; width: auto; bottom: 20vh; }
+  .card-rows { margin-bottom: 14px; }
+  .time { min-width: 0; }
+  .steps { font-size: 7px; letter-spacing: 0; }
+  .steps li { padding: 6px 4px; }
+  .steps li + li { margin-left: 12px; }
+  .steps li + li::before { left: -10px; }
+}
+
+</style>
+</head>
+<body>
+  <canvas id="film" aria-label="Animated film: AI agents testing a checkout flow"></canvas>
+
+  <!-- Typography layers. Every style below is driven per frame from the timeline in film.js. -->
+  <div class="title" id="title" aria-hidden="true">
+    <div class="title-main" data-text="AI IN TEST"></div>
+    <div class="title-sub">5 AGENTS · 1 TEST PIPELINE</div>
+  </div>
+
+  <div class="bug" id="bug" aria-hidden="true">AI IN TEST</div>
+  <ol class="steps" id="steps" aria-hidden="true"></ol>
+
+  <div class="human" id="human" aria-hidden="true">
+    <div class="human-head">
+      <canvas id="avatar" width="12" height="12"></canvas>
+      <div><b>YOU</b><small>QA LEAD</small></div>
+    </div>
+    <div class="human-msg"><span id="human-text"></span><i class="caret"></i></div>
+    <div class="human-foot"><span class="human-send" id="human-send">SEND ▶</span></div>
+  </div>
+
+  <section class="card" id="card" aria-hidden="true">
+    <div class="card-num" id="card-num"></div>
+    <h2 class="card-name"><span class="card-role" id="card-role"></span>KIRO</h2>
+    <p class="card-about" id="card-about"></p>
+    <dl class="card-rows" id="card-rows"></dl>
+  </section>
+
+  <section class="tasks" id="tasks" aria-hidden="true">
+    <div class="tasks-head" id="tasks-head"></div>
+    <h3 class="job-title" id="job-title"></h3>
+    <ol id="task-list"></ol>
+  </section>
+
+  <div class="stamp" id="stamp" aria-hidden="true"></div>
+
+  <div class="title final" id="final" aria-hidden="true">
+    <div class="title-main" data-text="ALL TESTS PASSED"></div>
+    <div class="title-sub">20 / 20 GREEN · 1 RETRY · RELEASE UNBLOCKED</div>
+  </div>
+
+  <div class="player" id="player">
+    <button type="button" id="play" aria-label="Pause">❚❚</button>
+    <span class="time" id="time">00:00</span>
+    <div class="scrub">
+      <input type="range" id="scrub" min="0" max="10000" value="0" step="1" aria-label="Seek">
+      <div class="marks" id="marks"></div>
+    </div>
+    <button type="button" class="wide" id="theme" hidden>DUSK DARK</button>
+    <button type="button" id="restart" aria-label="Restart">↺</button>
+    <button type="button" id="full" aria-label="Fullscreen (F)"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 5V1h4M11 1h4v4M15 11v4h-4M5 15H1v-4"/></svg></button>
+  </div>
+
+  <script>
+'use strict';
+// Kiro sprite kit, shared shape with the pipeline draft (../main.js): pixel grids, not canvases,
+// so the film can draw Kiro at any camera zoom with every pixel kept crisp.
+(() => {
+const PAL = {
+  o: '#0b0b14', e: '#0b0b14', w: '#ffffff', s: '#c8d2e8',
+  r: '#e3262f', R: '#9c1420', h: '#f1e4c3', H: '#b59d74',
+  g: '#8c94ab', l: '#bfe8ff', c: '#7a744c', C: '#57532f',
+  b: '#2f5fe0', k: '#e3eafb', y: '#ffd23f', p: '#ff4fb3',
+  t: '#2ee6d6', v: '#8b4dff', m: '#d9a520', G: '#2fd35a', f: '#ff5a1f', E: '#4a4a58',
+};
+
+/* ================= Kiro sprite ================= */
+// Kiro's silhouette is traced from the reference sprite: one [from, to] column span per row
+// (a row with two spans is the pair of feet). Drawing order: body → accessories → auto-outline → eyes → overlays.
+const GW = 32, GH = 40, OX = 2, OY = 7;
+const KIRO = [
+  [[13, 17]], [[10, 20]], [[8, 21]], [[7, 23]], [[6, 23]], [[6, 24]], [[6, 24]], [[5, 25]], [[4, 25]], [[4, 25]],
+  [[4, 26]], [[4, 26]], [[4, 26]], [[4, 26]], [[4, 26]], [[4, 26]],
+  [[3, 26]], [[3, 26]], [[3, 26]], [[3, 26]],
+  [[2, 25]], [[2, 25]], [[1, 25]], [[1, 25]], [[1, 24]],
+  [[6, 24]], [[6, 23]], [[6, 23]], [[5, 22]], [[6, 21]], [[6, 12], [15, 20]],
+];
+const TAIL_ROWS = [20, 24];   // rows whose cells left of column 3 form the tail
+const FEET_ROW = 29;          // rows from here down are the feet
+
+const ACC = {
+  planner: {
+    under(set, B, st) {
+      const horn = [[9,3,'h'],[9,4,'H'],[10,4,'h'],[9,5,'H'],[10,5,'h'],[10,6,'H'],[11,6,'h'],[10,7,'H'],[11,7,'h'],[12,7,'h'],[11,8,'H'],[12,8,'h'],[13,8,'h']];
+      horn.forEach(([x, y, c]) => { set(x, y, c); set(35 - x, y, c); });
+      const red = (x, y) => (x + y * 2) % 5 === 0 ? 'R' : 'r';
+      for (let y = 24; y <= 25; y++) for (let x = 0; x < GW; x++) if (B(x, y)) set(x, y, red(x, y));
+      for (let y = 26; y <= 31; y++) { const h = 32 - y; for (let x = 19 - h; x <= 18 + h; x++) if (B(x, y)) set(x, y, red(x, y)); }
+      const f = st.frame % 2;
+      [[4,23],[3,23],[2,24],[3,24],[4,24],[3,25],[4,25],[2,26+f],[1,26+f],[1,27+f]].forEach(([x, y], k) => set(x, y, k > 6 ? 'R' : 'r'));
+    },
+  },
+  researcher: {
+    over(set) {
+      for (const [a, b] of [[15, 19], [21, 24]]) {
+        for (let x = a; x <= b; x++) { set(x, 15, 'g'); set(x, 22, 'g'); }
+        for (let y = 15; y <= 22; y++) { set(a, y, 'g'); set(b, y, 'g'); }
+      }
+      set(20, 17, 'g');
+      for (let x = 10; x <= 14; x++) set(x, 17, 'g');
+      set(10, 18, 'g');
+    },
+  },
+  coder: {
+    under(set) {
+      const cols = ['p', 'y', 't', 'v', 'b'];
+      for (let y = 2; y <= 10; y++) {
+        const cx = 11 + (y - 2) * 0.5, hw = (y - 2) * 0.55 + 0.6;
+        for (let x = Math.round(cx - hw); x <= Math.round(cx + hw); x++) set(x, y, cols[Math.floor((x + y * 2) / 3) % 5]);
+      }
+      [[10,0],[11,0],[9,1],[10,1],[11,1],[12,1]].forEach(([x, y]) => set(x, y, 'y'));
+    },
+  },
+  reviewer: {
+    under(set, B) {
+      const tw = (x, y) => ((x * 3 + y * 5) % 7 < 3 ? 'C' : 'c');
+      for (let x = 15; x <= 19; x++) set(x, 6, tw(x, 6));
+      for (let x = 13; x <= 21; x++) set(x, 7, tw(x, 7));
+      for (let y = 8; y <= 12; y++) for (let x = 0; x < GW; x++) if (B(x, y) || B(x - 1, y) || B(x + 1, y)) set(x, y, y === 12 ? 'C' : tw(x, y));
+      for (let x = 25; x <= 30; x++) set(x, 12, 'c');
+      for (let x = 24; x <= 31; x++) set(x, 13, 'C');
+    },
+    over(set) {
+      [[22,15],[23,15],[24,15],[22,22],[23,22],[24,22]].forEach(([x, y]) => set(x, y, 'm'));
+      for (let y = 16; y <= 21; y++) { set(21, y, 'm'); set(25, y, 'm'); }
+      [[25,23],[26,24],[26,25],[27,26],[27,27],[26,28]].forEach(([x, y]) => set(x, y, 'm'));
+    },
+  },
+  deployer: {
+    under(set, B, st) {
+      const rows = { 12: 'b', 13: 'k', 14: 'k', 15: 'b' };
+      for (const y in rows) for (let x = 0; x < GW; x++) if (B(x, +y)) set(x, +y, rows[y]);
+      const f = st.frame % 2;
+      [[6,13],[7,13],[6,14],[7,14],[5,12 - f],[4,11 - f],[5,15],[4,16 + f],[3,16 + f]].forEach(([x, y]) => set(x, y, 'b'));
+    },
+  },
+};
+
+function drawBody(set, st) {
+  KIRO.forEach((spans, row) => {
+    for (const [a, b] of spans) for (let col = a; col <= b; col++) {
+      let x = col, y = row;
+      if (row >= TAIL_ROWS[0] && row <= TAIL_ROWS[1] && col < 3) y -= st.tailUp;   // tail wag
+      if (row >= FEET_ROW) x += st.sway;                                             // feet dangle
+      set(OX + x, OY + y, 'w');
+    }
+  });
+}
+
+// Eyes look right like the reference. mood: 'wait' (asleep) | 'wake' | 'think' | 'done' | 'drowsy' (nodding off)
+function drawEyes(set, st) {
+  const dx = st.eyeDx, dy = st.eyeDy;
+  const shut = () => { for (const x of [16, 17, 18, 21, 22, 23]) set(x + dx, 20 + dy, 'e'); };
+  const open = (topY, sparkle) => {   // eye cores run from topY down to row 21; lower topY = wider open
+    for (const [x0, side] of [[17, 16], [22, 21]]) {
+      for (let y = topY; y <= 21; y++) { set(x0 + dx, y + dy, 'e'); set(x0 + 1 + dx, y + dy, 'e'); }
+      for (let y = Math.max(topY + 1, 17); y <= 20; y++) set(side + dx, y + dy, 'E');
+      if (sparkle) set(x0 + 1 + dx, topY + 1 + dy, 'w');
+    }
+  };
+  if (st.mood === 'done') {   // happy ^ ^
+    [[16,20],[17,19],[18,19],[19,20],[21,20],[22,19],[23,19],[24,20]].forEach(([x, y]) => set(x + dx, y, 'e'));
+    return;
+  }
+  if (st.mood === 'wake') {   // shut → half open → wide awake
+    const k = Math.floor(st.wakeT / 110);
+    if (k < 2) shut(); else if (k < 3) open(19); else open(15, true);
+    return;
+  }
+  if (st.mood === 'wait' || st.blink) return shut();   // waiting Kiros are asleep
+  open(st.mood === 'drowsy' ? 19 : 16);
+}
+
+function buildKiro(id, st) {
+  const g = Array.from({ length: GH }, () => Array(GW).fill(null));
+  const set = (x, y, c) => { if (x >= 0 && y >= 0 && x < GW && y < GH) g[y][x] = c; };
+
+  drawBody(set, st);
+  const body = g.map(r => r.map(c => c !== null));
+  const B = (x, y) => y >= 0 && y < GH && x >= 0 && x < GW && body[y][x];
+
+  ACC[id].under?.(set, B, st);
+
+  const out = [];
+  for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) {
+    if (g[y][x]) continue;
+    if ((y > 0 && g[y - 1][x]) || (y < GH - 1 && g[y + 1][x]) || (x > 0 && g[y][x - 1]) || (x < GW - 1 && g[y][x + 1])) out.push([x, y]);
+  }
+  out.forEach(([x, y]) => (g[y][x] = 'o'));
+
+  drawEyes(set, st);
+  ACC[id].over?.(set, B, st);
+
+  return g;
+}
+
+/* ================= Mood sprites (thought cloud / "!" / sleeping Zs) ================= */
+const CLOUD = [
+  '...oooooooo...', '.oowwwwwwwwoo.', 'owwwwwwwwwwwwo', 'owwwwwwwwwwwwo', 'owwwwwwwwwwwwo',
+  '.oowwwwwwwwoo.', '...oooooooo...', '..oo..........', '.owwo.........', '..oo..........', 'oo............', 'oo............',
+];
+// Sleeping Zs: each one rises from Kiro's head to the upper right, growing z → Z, then fades; three run staggered.
+const ZS = [['www', '.w.', 'www'], ['wwww', '..w.', '.w..', 'wwww'], ['wwwww', '...w.', '..w..', '.w...', 'wwwww']];
+const EXCLAIM = ['ooo', 'oro', 'oro', 'oro', 'ooo', 'oro', 'ooo'];   // wake-up "!"
+const Z_LIFE = 15;   // frames per Z: z (0-4) → medium (5-9) → big Z (10-14)
+
+function moodPixels(mood, frame) {
+  const out = [];
+  const paint = (rows, ox, oy) => rows.forEach((r, y) => [...r].forEach((c, x) => { if (c !== '.') out.push([ox + x, oy + y, c]); }));
+  if (mood === 'wake') paint(EXCLAIM, 8, 8);
+  else if (mood === 'think') {
+    paint(CLOUD, 0, 6);
+    for (let i = 0; i < frame % 4; i++) for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) out.push([3 + i * 3 + dx, 9 + dy, 'e']);
+  } else if (mood === 'wait') {
+    for (let k = 0; k < 3; k++) {
+      const life = (frame + k * 5) % Z_LIFE, z = ZS[Math.floor(life / 5)];
+      paint(z, Math.floor(life * 0.7) + (life % 4 < 2 ? 0 : 1), 16 - z.length - Math.floor(life * 0.85));
+    }
+  }
+  return out;
+}
+
+
+const LETTER = ['ooooooooo', 'oowwwwwoo', 'owowwwowo', 'owwowowwo', 'owwwSwwwo', 'owwwwwwwo', 'ooooooooo'];
+const HUMAN = [
+  '...oooooo...', '..ohhhhhho..', '.ohhhhhhhho.', '.ohssssssho.', '.ossessesso.', '.osssssssso.',
+  '..osssmsso..', '...oossoo...', '..obbbbbbo..', '.obbbbbbbbo.', 'obbbbbbbbbbo', 'obbbbbbbbbbo',
+];
+const HUMAN_PAL = { o: '#2a2238', h: '#5a3b28', s: '#f2c8a2', e: '#2a2238', m: '#c0675a', b: '#4f6fd0' };
+
+
+/* ================= HD Kiro (smooth body traced from the Kiro logo) ================= */
+// The film draws Kiro on a grid 3x finer than the 32x40 sprite. The body is the logo silhouette;
+// accessories are the same pixel art upscaled with Scale3x (smooths diagonals, keeps colours crisp);
+// eyes are smooth shapes per mood. Finished frames are cached as small canvases.
+const HD = 3, HW = GW * HD, HH = GH * HD;
+const KIRO_HD = [[21,[[45,57]]],[22,[[41,61]]],[23,[[38,64]]],[24,[[36,66]]],[25,[[34,68]]],[26,[[33,69]]],[27,[[31,71]]],[28,[[30,72]]],[29,[[29,73]]],[30,[[28,74]]],[31,[[27,76]]],[32,[[26,76]]],[33,[[25,77]]],[34,[[24,78]]],[35,[[24,79]]],[36,[[23,79]]],[37,[[23,80]]],[38,[[22,80]]],[39,[[22,81]]],[40,[[21,82]]],[41,[[21,82]]],[42,[[21,82]]],[43,[[20,83]]],[44,[[20,83]]],[45,[[19,83]]],[46,[[19,84]]],[47,[[19,84]]],[48,[[19,84]]],[49,[[19,85]]],[50,[[18,85]]],[51,[[18,85]]],[52,[[18,85]]],[53,[[18,85]]],[54,[[17,85]]],[55,[[17,85]]],[56,[[17,86]]],[57,[[17,86]]],[58,[[17,86]]],[59,[[17,86]]],[60,[[17,86]]],[61,[[17,86]]],[62,[[17,86]]],[63,[[17,86]]],[64,[[16,86]]],[65,[[16,86]]],[66,[[16,86]]],[67,[[16,86]]],[68,[[16,86]]],[69,[[16,86]]],[70,[[15,86]]],[71,[[15,86]]],[72,[[15,86]]],[73,[[15,86]]],[74,[[14,85]]],[75,[[14,85]]],[76,[[14,85]]],[77,[[13,85]]],[78,[[13,85]]],[79,[[12,85]]],[80,[[12,85]]],[81,[[12,84]]],[82,[[11,84]]],[83,[[10,84]]],[84,[[10,83]]],[85,[[9,83]]],[86,[[9,83]]],[87,[[9,83]]],[88,[[9,82]]],[89,[[9,82]]],[90,[[9,82]]],[91,[[9,81]]],[92,[[10,81]]],[93,[[11,80]]],[94,[[12,80]]],[95,[[23,80]]],[96,[[22,79]]],[97,[[22,78]]],[98,[[22,78]]],[99,[[22,78]]],[100,[[22,77]]],[101,[[21,76]]],[102,[[21,76]]],[103,[[21,75]]],[104,[[21,74]]],[105,[[22,73]]],[106,[[22,72]]],[107,[[22,71]]],[108,[[23,48],[51,70]]],[109,[[23,47],[51,69]]],[110,[[24,45],[52,67]]],[111,[[25,43],[52,66]]],[112,[[27,41],[54,64]]],[113,[[29,37],[56,61]]]];   // [fineRow, [[fromX, toX], ...]]
+const HD_FEET_ROW = 103, HD_TAIL = { x: 18, y0: 77, y1: 101 };
+const EYES_HD = [{ cx: 52.5 }, { cx: 68.5 }];   // eye centres on the fine grid (from the logo)
+
+function scale3x(src, w, h) {
+  const out = Array.from({ length: h * 3 }, () => Array(w * 3).fill(null));
+  const at = (x, y) => (x < 0 || y < 0 || x >= w || y >= h ? null : src[y][x]);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const A = at(x - 1, y - 1), B = at(x, y - 1), Cc = at(x + 1, y - 1), D = at(x - 1, y), E = at(x, y), F = at(x + 1, y), G = at(x - 1, y + 1), Hh = at(x, y + 1), I = at(x + 1, y + 1);
+    let e = [E, E, E, E, E, E, E, E, E];
+    if (B !== Hh && D !== F) {
+      e = [
+        D === B ? D : E,
+        (D === B && E !== Cc) || (B === F && E !== A) ? B : E,
+        B === F ? F : E,
+        (D === B && E !== G) || (D === Hh && E !== A) ? D : E,
+        E,
+        (B === F && E !== I) || (Hh === F && E !== Cc) ? F : E,
+        D === Hh ? D : E,
+        (D === Hh && E !== I) || (Hh === F && E !== G) ? Hh : E,
+        Hh === F ? F : E,
+      ];
+    }
+    for (let k = 0; k < 9; k++) out[y * 3 + Math.floor(k / 3)][x * 3 + (k % 3)] = e[k];
+  }
+  return out;
+}
+
+function eyesHD(set, st) {
+  const dx = st.eyeDx * 3, dy = st.eyeDy * 3, mood = st.mood;
+  EYES_HD.forEach(({ cx }) => {
+    const x0 = cx + dx;
+    const oval = (cy, rx, ry, cut) => {   // filled ellipse; rows above `cut` are lidded
+      for (let y = Math.floor(cy - ry); y <= Math.ceil(cy + ry); y++) {
+        if (y < cut) continue;
+        const k = 1 - ((y + 0.5 - cy) / ry) ** 2;
+        if (k <= 0) continue;
+        const half = rx * Math.sqrt(k);
+        for (let x = Math.round(x0 - half); x < Math.round(x0 + half); x++) set(x, y + dy, 'e');
+      }
+    };
+    const bar = y => { for (let x = Math.round(x0 - 4.5); x < Math.round(x0 + 4.5); x++) { set(x, y + dy, 'e'); set(x, y + 1 + dy, 'e'); } };
+    if (mood === 'done') {           // happy ^
+      for (let x = -5; x <= 5; x++) { const y = Math.round(58 - Math.sqrt(Math.max(0, 25 - x * x)) * 0.8); set(Math.round(x0 + x), y, 'e'); set(Math.round(x0 + x), y + 1, 'e'); }
+      return;
+    }
+    if (mood === 'wake') {
+      const k = Math.floor(st.wakeT / 110);
+      if (k < 2) return bar(59);
+      if (k < 3) return oval(56, 4.5, 7.5, 56);
+      oval(54.5, 4.8, 8.5, 0);          // wide awake, with a sparkle
+      set(Math.round(x0 - 2), 49 + dy, 'w'); set(Math.round(x0 - 1), 49 + dy, 'w'); set(Math.round(x0 - 2), 50 + dy, 'w'); set(Math.round(x0 - 1), 50 + dy, 'w');
+      return;
+    }
+    if (mood === 'worried') {        // smaller eyes looking down, brows raised at the middle
+      oval(57.5, 3.8, 6, 0);
+      const inner = cx < 60 ? 1 : -1;
+      for (let k = -4; k <= 4; k++) { const y = Math.round(45 - (k * inner + 4) * 0.35); set(Math.round(x0 + k), y, 'e'); set(Math.round(x0 + k), y + 1, 'e'); }
+      return;
+    }
+    if (mood === 'wait' || st.blink) return bar(59);
+    oval(55.5, 4.5, 7.5, mood === 'drowsy' ? 56 : 0);
+  });
+}
+
+function buildKiroHD(id, st) {
+  // coarse accessory layers from the sprite kit (B = the coarse body, for pieces that wrap the body)
+  const coarse = () => Array.from({ length: GH }, () => Array(GW).fill(null));
+  const bodyC = coarse(), under = coarse(), over = coarse();
+  drawBody((x, y, c) => { if (x >= 0 && y >= 0 && x < GW && y < GH) bodyC[y][x] = c; }, { ...st, tailUp: 0, sway: 0 });
+  const B = (x, y) => y >= 0 && y < GH && x >= 0 && x < GW && !!bodyC[y][x];
+  const put = g => (x, y, c) => { if (x >= 0 && y >= 0 && x < GW && y < GH) g[y][x] = c; };
+  ACC[id].under?.(put(under), B, st);
+  ACC[id].over?.(put(over), B, st);
+  const onBodyC = (fx, fy) => B(Math.floor(fx / 3), Math.floor(fy / 3));
+
+  const g = Array.from({ length: HH }, () => Array(HW).fill(null));
+  const set = (x, y, c) => { if (x >= 0 && y >= 0 && x < HW && y < HH) g[y][x] = c; };
+  // 1. smooth body; feet dangle sideways, tail lifts
+  KIRO_HD.forEach(([y, spans]) => spans.forEach(([a, b]) => {
+    for (let x = a; x <= b; x++) {
+      let X = x, Y = y;
+      if (y >= HD_FEET_ROW) X += st.sway * 2;
+      if (x < HD_TAIL.x && y >= HD_TAIL.y0 && y <= HD_TAIL.y1) Y -= st.tailUp * 2;
+      set(X, Y, 'w');
+    }
+  }));
+  const bodyHD = g.map(r => r.map(c => c !== null));
+  // 2. under-accessories: pieces lying on the body are clipped to the smooth silhouette
+  const U = scale3x(under, GW, GH);
+  for (let y = 0; y < HH; y++) for (let x = 0; x < HW; x++) {
+    const c = U[y][x];
+    if (!c || c === 'o') continue;
+    if (onBodyC(x, y) && !bodyHD[y][x]) continue;
+    set(x, y, c);
+  }
+  // 3. outline, two fine cells thick
+  for (let pass = 0; pass < 2; pass++) {
+    const ring = [];
+    for (let y = 0; y < HH; y++) for (let x = 0; x < HW; x++) {
+      if (g[y][x]) continue;
+      if ((y > 0 && g[y - 1][x]) || (y < HH - 1 && g[y + 1][x]) || (x > 0 && g[y][x - 1]) || (x < HW - 1 && g[y][x + 1])) ring.push([x, y]);
+    }
+    ring.forEach(([x, y]) => (g[y][x] = 'o'));
+  }
+  // 4. eyes, 5. over-accessories (glasses, monocle)
+  eyesHD(set, st);
+  const O = scale3x(over, GW, GH);
+  for (let y = 0; y < HH; y++) for (let x = 0; x < HW; x++) if (O[y][x] && O[y][x] !== 'o') set(x, y, O[y][x]);
+  return g;
+}
+
+const hdCache = new Map();
+function kiroCanvas(id, st) {
+  const eyeKey = st.mood === 'wake' ? `w${Math.min(3, Math.floor(st.wakeT / 110))}` : st.mood + (st.blink ? 'b' : '');
+  const key = [id, eyeKey, st.eyeDx, st.eyeDy, st.sway, st.tailUp, st.frame % 2].join('|');
+  let c = hdCache.get(key);
+  if (!c) {
+    c = document.createElement('canvas'); c.width = HW; c.height = HH;
+    const x = c.getContext('2d'), g = buildKiroHD(id, st);
+    for (let y = 0; y < HH; y++) for (let i = 0; i < HW; i++) if (g[y][i]) { x.fillStyle = PAL[g[y][i]]; x.fillRect(i, y, 1, 1); }
+    if (hdCache.size > 600) hdCache.clear();
+    hdCache.set(key, c);
+  }
+  return c;
+}
+
+window.KiroSprites = { PAL, GW, GH, buildKiro, buildKiroHD, kiroCanvas, moodPixels, scale3x, LETTER, HUMAN, HUMAN_PAL };
+})();
+
+</script>
+  <script>
+'use strict';
+// "AI IN TEST": a scripted film. Every frame is a pure function of the time t (seconds), so the
+// player can pause, scrub and loop like a video. ?t=12.5&paused=1 opens on a specific frame.
+(() => {
+const K = window.KiroSprites;
+const $ = s => document.querySelector(s);
+const canvas = $('#film'), ctx = canvas.getContext('2d');
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ================= Palettes ================= */
+// One world for the whole film. Each theme: wall = gradient bands top → horizon (dithered pixel edges),
+// floor = two bands, orbs = big faint pixel discs drifting behind the line. paper = the colour panels mix towards.
+// Cycle with T. Swap in official brand hex values here if you have them.
+const THEMES = {
+  dusk: {   // sunset: peach → rose → lilac wall, periwinkle floor, coral accents
+    label: 'DUSK',
+    wall: ['#fde8d7', '#fbdfdc', '#f6d7e3', '#ecd3ec', '#e1d2f3', '#d8d4f7'], paper: '#f3dbe6',
+    wallDot: 'rgba(120,90,140,0.13)', floor: ['#d9dcf6', '#cdd1f0'], floorLine: '#bcc2ea', ground: '#9aa0dc', chevron: '#b5bbe8',
+    orbs: ['#ffb38a', '#ff8fb1', '#a99cff'], orbAlpha: 0.13,
+    ink: '#1e1b3a', card: '#fffaf6', muted: '#7d7397', titleShadow: '#ff7a59', flash: '#fff6ee',
+    shadow: 'rgba(60,40,90,0.16)', panelMix: 0.72,
+  },
+  duskDark: {   // dusk after sunset: navy → plum → wine, warm coral glow at the horizon, indigo floor
+    label: 'DUSK DARK',
+    wall: ['#13112a', '#1b1532', '#28193b', '#3a1d43', '#4f2347', '#672b4a'], paper: '#28193b',
+    wallDot: 'rgba(255,200,220,0.08)', floor: ['#1b1734', '#120f26'], floorLine: '#2d2752', ground: '#ff7a59', chevron: '#3a3163',
+    orbs: ['#ff7a59', '#ff8fb1', '#a99cff'], orbAlpha: 0.1,
+    ink: '#fdeee8', card: '#211a3a', muted: '#b9a0bd', titleShadow: '#ff7a59', flash: '#3a2340',
+    shadow: 'rgba(0,0,0,0.45)', panelMix: 0.55,
+  },
+  midnight: {   // dark: deep navy → teal-blue, teal ground glow, teal + indigo orbs
+    label: 'MIDNIGHT',
+    wall: ['#0a1626', '#0c1b2f', '#0f2137', '#122840', '#152f49', '#193652'], paper: '#122840',
+    wallDot: 'rgba(140,200,255,0.09)', floor: ['#0f2236', '#0b192a'], floorLine: '#1c3a57', ground: '#2fb5c9', chevron: '#23425f',
+    orbs: ['#2fb5c9', '#4f7cff', '#7c6cff'], orbAlpha: 0.1,
+    ink: '#e8f1ff', card: '#13263b', muted: '#8fa6c4', titleShadow: '#2fb5c9', flash: '#1f3a55',
+    shadow: 'rgba(0,0,0,0.45)', panelMix: 0.55,
+  },
+  kiro: {   // lavender
+    label: 'KIRO',
+    wall: ['#f6f2ff', '#f1ecfe', '#ece5fc', '#e7dffb', '#e2d9f9', '#ddd3f7'], paper: '#efeafd',
+    wallDot: 'rgba(110,80,180,0.12)', floor: ['#e5dcfa', '#dcd1f6'], floorLine: '#d0c3f1', ground: '#a58bea', chevron: '#c7b6f2',
+    orbs: ['#b794f6', '#7b3fe4', '#f0abfc'], orbAlpha: 0.13,
+    ink: '#1d1430', card: '#fbf9ff', muted: '#76699a', titleShadow: '#7b3fe4', flash: '#ffffff',
+    shadow: 'rgba(60,30,120,0.16)', panelMix: 0.74,
+  },
+  paper: {   // warm beige
+    label: 'BEIGE',
+    wall: ['#f6eedd', '#f3ead7', '#f0e6d2', '#ede2cb', '#eadec5', '#e6d9be'], paper: '#efe6d2',
+    wallDot: 'rgba(120,95,50,0.12)', floor: ['#e7dcc4', '#ded2b6'], floorLine: '#d7c8a7', ground: '#c4ad82', chevron: '#d2c09b',
+    orbs: ['#e39b00', '#d23aa9', '#2f86d8'], orbAlpha: 0.09,
+    ink: '#2a2238', card: '#fbf6ea', muted: '#7b6f86', titleShadow: '#7a4fd0', flash: '#fbf6ea',
+    shadow: 'rgba(90,70,40,0.18)', panelMix: 0.74,
+  },
+};
+const THEME_ORDER = ['dusk', 'duskDark', 'midnight', 'kiro', 'paper'];
+const C = {};
+let themeName = 'dusk';
+function applyTheme(name) {
+  themeName = THEMES[name] ? name : 'dusk';
+  Object.keys(C).forEach(k => delete C[k]);
+  Object.assign(C, THEMES[themeName]);
+  const root = document.documentElement.style;
+  [['--bg', C.wall[0]], ['--card', C.card], ['--ink', C.ink], ['--muted', C.muted],
+   ['--title-shadow', C.titleShadow]].forEach(([k, v]) => root.setProperty(k, v));
+}
+
+/* ================= Cast ================= */
+const AGENTS = [
+  { id: 'planner', step: 'PLAN', role: 'THE PLANNER', color: '#e39b00', gear: 'Horns & bandana', ability: 'Test strategy',
+    about: 'Turns a request into a test plan. It breaks the goal into risks and test cases, then orders them so the most important checks run first.', },
+  { id: 'researcher', step: 'RESEARCH', role: 'THE RESEARCHER', color: '#2f86d8', gear: 'Reading glasses', ability: 'Deep search',
+    about: 'Checks the plan against the specs and past bugs, and when something fails it digs in to find the root cause.', },
+  { id: 'coder', step: 'CODE', role: 'THE CODER', color: '#d23aa9', gear: 'Party hat', ability: 'Test runner',
+    about: 'Runs the suite against staging and reports what breaks. Once a failure is fixed, it writes regression tests so it never comes back.', },
+  { id: 'reviewer', step: 'REVIEW', role: 'THE REVIEWER', color: '#e3651c', gear: 'Flat cap & monocle', ability: 'Nitpick',
+    about: 'Tests the tests. It hunts for flaky or weak cases, measures coverage, and only approves a suite the team can actually trust.', },
+  { id: 'deployer', step: 'DEPLOY', role: 'THE DEPLOYER', color: '#2a9d4f', gear: 'Headband', ability: 'Safe rollout',
+    about: 'Wires the suite into CI, runs it against staging, and unblocks the release the moment every test is green.', },
+];
+const N = AGENTS.length;
+const HUMAN_MSG = "Test the new checkout flow before Friday's release.";
+
+/* ================= Timeline (seconds) ================= */
+const SP = 64;   // world units between Kiros (a Kiro sprite is 32 x 40 units)
+const T = {
+  reveal: 3.7, asleep: 4.3, dolly: [4.6, 7.8],
+  humanIn: 8.4, type: [8.9, 10.2], send: 10.35, hit: 11.2,
+  agents: 11.2,
+};
+
+/* ================= Flow: visits and jobs ================= */
+// The story. Each visit keeps the camera on one Kiro while it does one or more jobs (TASK or CHECK);
+// `out` is the label on the envelope sent to the next visit's Kiro. A visit to an earlier Kiro is the failure loop.
+const FLOW = [
+  { a: 0, intro: true, out: 'TEST PLAN', jobs: [
+    { kind: 'TASK', title: 'Draft the test plan', stamp: 'PLAN DRAFTED',
+      lines: ['Read the request: checkout flow', 'Identify 4 risk areas', 'Write 18 test cases'] },
+    { kind: 'TASK', title: 'Prepare the test data', stamp: 'DATA READY',
+      lines: ['Create 6 test accounts', 'Seed carts and saved cards', 'Snapshot the data set'] } ] },
+  { a: 1, intro: true, out: 'PLAN OK', jobs: [
+    { kind: 'CHECK', title: 'Check the plan against the spec', stamp: 'CHECK PASSED',
+      lines: ['Compare cases to the payment spec', 'All 4 risk areas covered', 'Plan matches the spec'] } ] },
+  { a: 2, intro: true, out: '2 FAILING', jobs: [
+    { kind: 'CHECK', title: 'Run the suite on staging', stamp: 'CHECK FAILED', fail: true,
+      lines: ['Run 18 tests on staging', '16 passed', '2 failed: promo code, expired card'] } ] },
+  { a: 1, out: 'FIX', jobs: [
+    { kind: 'CHECK', title: 'Re-check the failures', stamp: 'FIX FOUND',
+      lines: ['Trace both failures', 'Root cause: stale test data', 'Patch the data set'] } ] },
+  { a: 2, out: 'TEST SUITE', jobs: [
+    { kind: 'CHECK', title: 'Re-run the suite', stamp: 'CHECK PASSED', closesLoop: true,
+      lines: ['Run 18 tests on staging', '18 / 18 passed'] },
+    { kind: 'TASK', title: 'Add regression tests', stamp: 'TESTS ADDED',
+      lines: ['Cover promo code + expired card', 'Add 2 regression tests', 'Suite is now 20 tests'] } ] },
+  { a: 3, intro: true, out: 'APPROVED', jobs: [
+    { kind: 'TASK', title: 'Review test quality', stamp: 'REVIEWED',
+      lines: ['Read all 20 tests', 'Flag 1 weak assertion, fixed', 'Coverage: 92%'] },
+    { kind: 'TASK', title: 'Sign off the release', stamp: 'APPROVED',
+      lines: ['Check the release criteria', 'Write the test report', 'Sign off'] } ] },
+  { a: 4, intro: true, jobs: [
+    { kind: 'TASK', title: 'Ship it', stamp: 'SHIPPED',
+      lines: ['Add the suite to CI', 'Deploy to production', 'Release unblocked'] } ] },
+];
+const RED = '#d64545', GREEN = '#2a9d4f';
+// visit-local timing: wake + zoom 0-1.1 | character card 1.1-4.6 (first visit only) | jobs, 4.2s each
+const V = { wake: 1.1, card: 1.1, cardOut: 4.2, introJobs: 4.7, revisitJobs: 1.0, job: 4.2, stamp: 2.8, jobOut: 3.85 };
+const HAND = 1.4, LAUNCH = 0.2, CATCH = 0.14, ARC = 22;
+(() => {   // lay the visits out on the clock
+  let at = T.agents;
+  FLOW.forEach((v, k) => {
+    v.k = k; v.start = at;
+    v.jobsStart = at + (v.intro ? V.introJobs : V.revisitJobs);
+    v.jobs.forEach((j, n) => { j.n = n; j.v = v; j.start = v.jobsStart + n * V.job; });
+    v.jobsEnd = v.jobsStart + v.jobs.length * V.job;
+    const next = FLOW[k + 1];
+    if (next) { v.to = next.a; v.back = next.a < v.a; v.handStart = v.jobsEnd; at = v.jobsEnd + HAND; } else at = v.jobsEnd;
+    v.end = at;
+  });
+})();
+const LOOP = (() => {
+  const fail = FLOW.find(v => v.back), closer = FLOW.flatMap(v => v.jobs).find(j => j.closesLoop);
+  return { from: fail.a, to: fail.to, start: fail.handStart, close: closer.start + V.stamp };
+})();
+T.finale = FLOW[FLOW.length - 1].jobsEnd;
+const DURATION = T.finale + 7.2;
+
+const CHAPTERS = [['TITLE', 0], ['LINE-UP', T.reveal], ['THE ASK', T.dolly[1]],
+  ...FLOW.map(v => [AGENTS[v.a].role.replace('THE ', '') + (v.intro ? '' : ' (RETRY)'), v.start]), ['FINALE', T.finale]];
+
+/* ================= Maths ================= */
+const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, p) => a + (b - a) * p;
+const seg = (t, a, b) => clamp((t - a) / (b - a));
+const E = {
+  linear: p => p,
+  inOutCubic: p => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2),
+  inOutSine: p => -(Math.cos(Math.PI * p) - 1) / 2,
+  inOutQuint: p => (p < 0.5 ? 16 * p ** 5 : 1 - Math.pow(-2 * p + 2, 5) / 2),
+  outCubic: p => 1 - Math.pow(1 - p, 3),
+  inCubic: p => p * p * p,
+  outBack: p => { const c = 1.70158; return 1 + (c + 1) * Math.pow(p - 1, 3) + c * Math.pow(p - 1, 2); },
+};
+const hash = n => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+const mixHex = (a, b, p) => { const A = hex(a), B = hex(b); return `rgb(${A.map((v, i) => Math.round(lerp(v, B[i], p))).join(',')})`; };
+
+/* ================= Hand-off flight ================= */
+// The envelope pops out of the sender's head, arcs to the receiver and is caught. h = seconds into the hand-off.
+function flight(v, t) {
+  const h = t - v.handStart;
+  const p = E.inOutSine(seg(h, LAUNCH, HAND - CATCH));
+  const lift = E.outCubic(seg(h, 0, LAUNCH));                                   // rises out of the head
+  const at = q => ({ x: lerp(v.a * SP, v.to * SP, q), y: lerp(-26, -34, lift) - Math.sin(Math.PI * q) * ARC });
+  const pos = at(p), ahead = at(Math.min(1, p + 0.02)), behind = at(Math.max(0, p - 0.02));
+  const ang = Math.atan2(ahead.y - behind.y, ahead.x - behind.x);
+  return {
+    h, p, ...pos,
+    angle: v.back ? clamp(ang - Math.PI, -0.5, 0.5) * -1 : clamp(ang, -0.5, 0.5),   // tilt with the direction of travel
+    scale: E.outBack(seg(h, 0, LAUNCH)) * (1 - E.inCubic(seg(h, HAND - CATCH, HAND))),
+    at,
+  };
+}
+
+/* ================= Camera ================= */
+let W = 0, H = 0, dpr = 1;
+const narrow = () => W / dpr < 760;
+
+function preset(p, t) {
+  const o = typeof p === 'string' ? { p } : p;
+  const push = o.push || 1;
+  switch (o.p) {
+    case 'title':    return { x: SP * 2, y: 0, z: Math.min(W * 0.94 / (SP * 4 + 40), H * 0.3 / 40), fx: W / 2, fy: H * 0.74 };
+    case 'overview': return { x: SP * 2, y: -20, z: Math.min(W * 0.84 / (SP * 4 + 48), H * 0.3 / 40), fx: W / 2, fy: H * 0.72 };
+    case 'dolly':    return { x: o.x, y: -20, z: H * 0.36 / 40, fx: W / 2, fy: H * 0.54 };
+    case 'human':    return { x: -SP * 0.85, y: -20, z: H * 0.34 / 40 * push, fx: W * 0.5, fy: H * 0.52 };
+    case 'mid':      return { x: o.i * SP, y: -20, z: H * 0.36 / 40, fx: W * 0.5, fy: H * 0.54 };
+    case 'track': {  // follows the flying envelope: it stays centred while the world slides past
+      const f = flight(FLOW[o.k], t);
+      return { x: f.x, y: -20 - Math.sin(Math.PI * f.p) * ARC * 0.5, z: H * 0.3 / 40, fx: W * 0.5, fy: H * 0.5 };
+    }
+    case 'close':    return narrow()
+      ? { x: o.i * SP, y: -20, z: Math.min(H * 0.3 / 40, W * 0.55 / 32) * push, fx: W * 0.5, fy: H * 0.3 }
+      : { x: o.i * SP, y: -20, z: Math.min(H * 0.56 / 40, W * 0.34 / 32) * push, fx: W * 0.26, fy: H * 0.57 };
+  }
+}
+
+// Shots: [t0, t1, from, to, ease]
+const SHOTS = (() => {
+  const s = [];
+  const add = (t0, t1, from, to, ease = E.inOutCubic) => s.push({ t0, t1, from, to, ease });
+  add(0, T.reveal, 'title', 'title');
+  add(T.reveal, T.dolly[0], 'title', { p: 'dolly', x: -40 });
+  add(T.dolly[0], T.dolly[1], { p: 'dolly', x: -40 }, { p: 'dolly', x: SP * 4 + 40 }, E.inOutSine);
+  add(T.dolly[1], T.humanIn, 'human', 'human');   // hard cut (masked by a flash) so the camera never travels backwards
+  add(T.humanIn, T.agents, 'human', { p: 'human', push: 1.08 }, E.inOutSine);               // slow push while the human types
+  FLOW.forEach((v, k) => {
+    add(v.start, v.start + V.wake, k === 0 ? { p: 'human', push: 1.08 } : { p: 'mid', i: v.a }, { p: 'close', i: v.a });
+    add(v.start + V.wake, v.jobsEnd, { p: 'close', i: v.a }, { p: 'close', i: v.a, push: 1.05 }, E.inOutSine);   // slow push-in
+    if (v.to !== undefined) {
+      const h0 = v.handStart;
+      add(h0, h0 + 0.35, { p: 'close', i: v.a, push: 1.05 }, { p: 'track', k }, E.inOutCubic);   // ease out of the close-up onto the envelope
+      add(h0 + 0.35, h0 + HAND - 0.3, { p: 'track', k }, { p: 'track', k }, E.linear);           // ride along with it
+      add(h0 + HAND - 0.3, h0 + HAND, { p: 'track', k }, { p: 'mid', i: v.to }, E.inOutCubic);   // settle on the catcher
+    }
+  });
+  add(T.finale, T.finale + 1.3, { p: 'close', i: FLOW[FLOW.length - 1].a, push: 1.05 }, 'overview', E.inOutCubic);
+  add(T.finale + 1.3, DURATION + 1, 'overview', 'overview');
+  return s;
+})();
+
+function cameraAt(t) {
+  const s = SHOTS.find(x => t >= x.t0 && t < x.t1) || SHOTS[SHOTS.length - 1];
+  const p = s.ease(seg(t, s.t0, s.t1)), A = preset(s.from, t), B = preset(s.to, t);
+  const cam = {
+    x: lerp(A.x, B.x, p), y: lerp(A.y, B.y, p),
+    z: Math.exp(lerp(Math.log(A.z), Math.log(B.z), p)),   // zoom in log space feels even
+    fx: lerp(A.fx, B.fx, p), fy: lerp(A.fy, B.fy, p),
+  };
+  return cam;
+}
+const toScreen = (cam, wx, wy) => [(wx - cam.x) * cam.z + cam.fx, (wy - cam.y) * cam.z + cam.fy];
+
+// dolly zoom: the floor's perspective stretches while the Kiros keep their size
+function fov(t) {
+  if (t < T.reveal || t > T.humanIn) return 1;
+  if (t < T.dolly[0]) return lerp(1, 0.55, E.inOutCubic(seg(t, T.reveal, T.dolly[0])));
+  if (t < T.dolly[1]) return lerp(0.55, 2.4, E.inOutSine(seg(t, T.dolly[0], T.dolly[1])));
+  return 1;   // reset under the cut
+}
+
+/* ================= Background ================= */
+const ORBS = Array.from({ length: 7 }, (_, k) => ({ x: -90 + k * 66 + hash(k) * 30, y: 0.15 + hash(k + 20) * 0.5, r: 20 + hash(k + 40) * 26, c: k % 3 }));
+
+// a filled disc built from square "pixels" of size ps, so the orbs stay pixel-art at any zoom
+function pixelDisc(cx, cy, r, ps) {
+  for (let y = -r; y < r; y += ps) {
+    const half = Math.floor(Math.sqrt(Math.max(0, r * r - (y + ps / 2) ** 2)) / ps) * ps;
+    if (half > 0) ctx.fillRect(Math.round(cx - half), Math.round(cy + y), half * 2, ps);
+  }
+}
+
+function drawWorld(t, cam) {
+  const f = fov(t), gy = Math.round(toScreen(cam, 0, 0)[1]), wallH = clamp(gy, 0, H);
+  const ps = Math.max(3 * dpr, Math.round(cam.z * 0.5));            // dither pixel size
+  // wall: gradient bands, checkerboard dither where they meet
+  const bands = C.wall, bh = wallH / bands.length;
+  bands.forEach((c, i) => { ctx.fillStyle = c; ctx.fillRect(0, Math.floor(i * bh), W, Math.ceil(bh) + 1); });
+  for (let i = 1; i < bands.length && bh > ps * 2; i++) {
+    const y = Math.floor(i * bh);
+    ctx.fillStyle = bands[i - 1];
+    for (let x = 0; x < W; x += ps * 2) { ctx.fillRect(x, y, ps, ps); ctx.fillRect(x + ps, y + ps, ps, ps); }
+    ctx.fillStyle = bands[i];
+    for (let x = ps; x < W; x += ps * 2) ctx.fillRect(x, y - ps, ps, ps);
+  }
+  // orbs: big faint pixel discs drifting slowly behind the line (parallax 0.35)
+  ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, wallH); ctx.clip();
+  ctx.globalAlpha = C.orbAlpha;
+  ORBS.forEach((o, k) => {
+    const drift = reduceMotion ? 0 : t;
+    const ox = (o.x + Math.sin(drift * 0.18 + k) * 10 - cam.x) * cam.z * 0.35 + cam.fx;
+    const oy = wallH * o.y + Math.cos(drift * 0.15 + k * 2) * wallH * 0.04;
+    const r = Math.min(H * 0.14, o.r * cam.z * 0.38);   // capped so close-ups stay calm
+    ctx.fillStyle = C.orbs[o.c];
+    pixelDisc(ox, oy, r, Math.max(ps, Math.round(r / 7)));
+  });
+  ctx.globalAlpha = 1; ctx.restore();
+  // dot grid that scales against the dolly
+  const s = Math.max(14 * dpr, cam.z * 12 / f), d = Math.max(2 * dpr, Math.round(cam.z * 0.7 / f));
+  const ox = ((-cam.x * cam.z * 0.5 / f) % s + s) % s;
+  ctx.fillStyle = C.wallDot;
+  for (let y = gy - s * 0.6; y > -s; y -= s) for (let x = ox; x < W; x += s) ctx.fillRect(Math.round(x), Math.round(y), d, d);
+  // floor: two bands + perspective lines
+  if (gy < H) {
+    ctx.fillStyle = C.floor[0]; ctx.fillRect(0, gy, W, H - gy);
+    ctx.fillStyle = C.floor[1]; ctx.fillRect(0, gy + (H - gy) * 0.55, W, H);
+    ctx.strokeStyle = C.floorLine; ctx.lineWidth = Math.max(1, 2 * dpr);
+    ctx.beginPath();
+    const step = 24, first = Math.floor((cam.x - cam.fx / cam.z) / step) - 8, last = Math.ceil((cam.x + (W - cam.fx) / cam.z) / step) + 8;
+    for (let k = first; k <= last; k++) {
+      const sx = toScreen(cam, k * step, 0)[0], bx = sx + (sx - W / 2) * 0.9 * f;
+      ctx.moveTo(sx, gy); ctx.lineTo(bx, H);
+    }
+    for (let k = 1; k <= 7; k++) { const y = gy + (H - gy) * Math.pow(k / 7, 1.2 + 0.5 * f); ctx.moveTo(0, y); ctx.lineTo(W, y); }
+    ctx.stroke();
+  }
+  ctx.fillStyle = C.ground; ctx.fillRect(0, gy - Math.round(dpr), W, Math.max(2, 3 * dpr));
+}
+
+/* ================= Character-screen panel (right side, in the agent's colour) ================= */
+function activeAgent(t) {   // the visit on screen: { v, i (agent), u (seconds into the visit) }
+  if (t < T.agents || t >= T.finale + 0.6) return null;
+  const v = [...FLOW].reverse().find(x => t >= x.start) || FLOW[0];
+  return { v, i: v.a, u: t - v.start };
+}
+
+function drawPanel(t) {
+  const a = activeAgent(t);
+  if (!a) return;
+  const { i, u, v } = a, col = AGENTS[i].color;
+  const pin = E.outCubic(seg(u, 0.35, 1.05)), pout = E.inCubic(seg(t, v.jobsEnd - 0.1, v.jobsEnd + 0.45));
+  if (pin <= 0 || pout >= 1) return;
+  ctx.save();
+  ctx.beginPath();
+  if (narrow()) {   // portrait: panel rises from the bottom
+    const top = H * 0.46 + (1 - pin) * H * 0.6 + pout * H * 0.6;
+    ctx.moveTo(0, top + H * 0.05); ctx.lineTo(W, top); ctx.lineTo(W, H); ctx.lineTo(0, H);
+  } else {          // landscape: slanted panel slides in from the right
+    const left = W * 0.47 + (1 - pin) * W * 0.62 + pout * W * 0.62;
+    ctx.moveTo(left + W * 0.07, 0); ctx.lineTo(W, 0); ctx.lineTo(W, H); ctx.lineTo(left, H);
+  }
+  ctx.closePath(); ctx.clip();
+  const m = C.panelMix || 0.74;   // how far the agent colour is mixed towards the world colour
+  ctx.fillStyle = mixHex(col, C.paper, m); ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = mixHex(col, C.paper, m - 0.1); ctx.lineWidth = 22 * dpr;
+  const off = (t * 26 * dpr) % (70 * dpr);
+  ctx.beginPath();
+  for (let x = -H + off; x < W + H; x += 70 * dpr) { ctx.moveTo(x, H); ctx.lineTo(x + H, 0); }
+  ctx.stroke();
+  // big index watermark
+  ctx.fillStyle = mixHex(col, C.paper, m - 0.19);
+  ctx.font = `${Math.round(H * 0.3)}px "Press Start 2P"`; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+  ctx.fillText(`0${i + 1}`, W - 24 * dpr, H - 8 * dpr);
+  ctx.restore();
+}
+
+/* ================= Kiros ================= */
+const VISITS_OF = AGENTS.map((_, i) => FLOW.filter(v => v.a === i));
+function kiroState(i, t) {
+  const cheer = T.finale + 0.7, sleepAgain = T.finale + 5.2;
+  const bob = (speed, amp) => Math.sin(t * speed + i * 1.3) * amp;
+  const st = { mood: 'wait', wakeT: 0, eyeDx: 0, eyeDy: 0, blink: false, hop: -1.5 + bob(1.3, 0.8), sx: 1, sy: 1, slow: 3 };
+  const blink = (t * 1000 + i * 700) % 3300 < 130;
+  const v = [...VISITS_OF[i]].reverse().find(x => t >= x.start);   // latest visit that has begun
+
+  if (t < T.asleep) {                          // title: awake, idling
+    Object.assign(st, { mood: 'idle', hop: -2 + bob(2.4, 1.5), blink });
+    const p = seg(t, 0.9 + i * 0.12, 1.35 + i * 0.12);
+    st.sx = st.sy = E.outBack(p);              // pop in one after another
+  } else if (!v) {
+    // asleep until its first visit
+  } else if (t < v.start + 1.0) {              // wake-up: scrunch, startled hop, land
+    const w = t - v.start;
+    Object.assign(st, { mood: 'wake', wakeT: w * 900 });
+    if (w < 0.14) Object.assign(st, { sx: 1.12, sy: 0.86, hop: 0 });
+    else if (w < 0.42) Object.assign(st, { sx: 0.92, sy: 1.1, hop: -16 * E.outCubic((w - 0.14) / 0.28) });
+    else if (w < 0.62) Object.assign(st, { hop: -16 * (1 - E.inCubic((w - 0.42) / 0.2)) });
+    else if (w < 0.74) Object.assign(st, { sx: 1.08, sy: 0.92, hop: 0 });
+    else st.hop = -2;
+  } else if (t < v.jobsEnd) {
+    // working; each job's result gets a reaction: a happy hop when it passes, worried when it fails
+    const j = v.jobs.find(x => t >= x.start + V.stamp && t < x.start + V.job);
+    if (j && j.fail) Object.assign(st, { mood: 'worried', hop: -2 + bob(18, 0.8) });
+    else if (j) { const d = t - j.start - V.stamp; Object.assign(st, { mood: 'done', hop: -2 - Math.abs(Math.sin(d * 7)) * 5 * Math.max(0, 1 - d / 1.1) }); }
+    else Object.assign(st, { mood: 'think', eyeDy: -1, eyeDx: Math.floor(t * 1.4) % 3 === 1 ? -1 : 1, hop: -3 + bob(7, 2.2), slow: 1 });
+  } else {
+    const d = t - v.jobsEnd, failed = v.jobs[v.jobs.length - 1].fail;
+    if (d < 1.8) Object.assign(st, failed ? { mood: 'worried' } : { mood: 'done', hop: -2 - Math.abs(Math.sin(d * 7)) * 3 * Math.max(0, 1 - d / 1.3) });
+    else if (d < 2.4) st.mood = 'drowsy';
+  }
+
+  if (t >= cheer && t < sleepAgain) Object.assign(st, { mood: 'done', hop: -2 - Math.abs(Math.sin((t - cheer) * 6 + i * 0.7)) * 5 });
+  else if (t >= sleepAgain && t < sleepAgain + 0.6) Object.assign(st, { mood: 'drowsy', hop: -1.5 });
+  else if (t >= sleepAgain + 0.6) Object.assign(st, { mood: 'wait', hop: -1.5 + bob(1.3, 0.8) });
+
+  const f = Math.floor(t * 8) + i * 3, ff = Math.floor(f / st.slow);
+  st.frame = ff; st.tailUp = ff % 2; st.sway = [0, -1, 0, 1][ff % 4];
+  st.moodFrame = Math.floor(f / (st.mood === 'wait' ? 2 : 3));
+  return st;
+}
+
+// Draw a pixel grid in world space. Pixel edges are rounded individually, so there are no seams at any zoom.
+function drawGrid(cam, rows, wx, wy, w, h, colour, sx = 1, sy = 1) {
+  const X = k => Math.round((wx + (k - w / 2) * sx - cam.x) * cam.z + cam.fx);
+  const Y = k => Math.round((wy + (k - h) * sy - cam.y) * cam.z + cam.fy);
+  for (let y = 0; y < h; y++) {
+    const y0 = Y(y), y1 = Y(y + 1);
+    if (y1 < 0 || y0 > H) continue;
+    for (let x = 0; x < w; x++) {
+      const c = rows[y][x];
+      if (!c || c === '.') continue;   // '.' marks an empty pixel in string sprites
+      const x0 = X(x), x1 = X(x + 1);
+      if (x1 < 0 || x0 > W) continue;
+      ctx.fillStyle = colour(c); ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+    }
+  }
+}
+
+function drawKiros(t, cam, only) {
+  AGENTS.forEach((a, i) => {
+    if (only !== undefined && (only === null ? false : only.has(i) === false)) return;
+    const wx = i * SP, st = kiroState(i, t);
+    if (st.sx <= 0.01) return;
+    const [sx] = toScreen(cam, wx, 0);
+    if (sx < -60 * cam.z || sx > W + 60 * cam.z) return;
+    // soft ground shadow that shrinks as Kiro rises
+    const [gx, gy] = toScreen(cam, wx - 1, 0), k = clamp(1 + st.hop / 30, 0.5, 1);
+    ctx.fillStyle = C.shadow;
+    ctx.beginPath(); ctx.ellipse(gx, gy, 12 * cam.z * k * st.sx, 2.4 * cam.z * k, 0, 0, Math.PI * 2); ctx.fill();
+
+    // smooth HD Kiro (cached per pose), scaled from its bottom-centre like the old pixel grid
+    const img = K.kiroCanvas(a.id, st), wy = st.hop + 2;
+    const x0 = Math.round((wx - (K.GW / 2) * st.sx - cam.x) * cam.z + cam.fx), x1 = Math.round((wx + (K.GW / 2) * st.sx - cam.x) * cam.z + cam.fx);
+    const y0 = Math.round((wy - K.GH * st.sy - cam.y) * cam.z + cam.fy), y1 = Math.round((wy - cam.y) * cam.z + cam.fy);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(img, x0, y0, x1 - x0, y1 - y0);
+    // mood: Zs / "!" / thought cloud, above and right of the head
+    const px = K.moodPixels(st.mood, st.moodFrame);
+    if (px.length) {
+      const m = Array.from({ length: 18 }, () => Array(16).fill(null));
+      px.forEach(([x, y, c]) => { if (y >= 0 && y < 18 && x < 16) m[y][x] = c; });
+      // smoothed like the HD Kiro (Scale3x), drawn at a third of the cell size
+      drawGrid(cam, K.scale3x(m, 16, 18), wx + 19, st.hop - 30, 48, 54, c => (c === 'w' && st.mood === 'wait' ? C.ink : K.PAL[c]), 1 / 3, 1 / 3);   // Zs in the theme's ink
+    }
+  });
+}
+
+/* ================= Direction: chevron track + name labels ================= */
+const CHEVRON = ['x..', '.x.', '..x', '.x.', 'x..'];
+// how much of the track from agent j to j+1 is lit: it fills as the first envelope along it travels, then stays lit
+const FIRST_FWD = AGENTS.map((_, j) => FLOW.find(v => v.a === j && v.to === j + 1));
+function trackLit(j, t) {
+  const v = FIRST_FWD[j];
+  if (!v) return 0;
+  return t >= v.end ? 1 : t >= v.handStart ? E.inOutCubic(seg(t, v.handStart, v.end)) : 0;
+}
+// the loop: a dashed arc over the Kiros from the failed check back to the re-check; red while open, green as it closes
+const LOOP_BACK = ['..x', '.x.', 'x..', '.x.', '..x'];
+function drawLoop(t, cam) {
+  if (t < LOOP.start || t > LOOP.close + 1.2) return;
+  const grow = E.inOutCubic(seg(t, LOOP.start, LOOP.start + HAND)), fade = 1 - seg(t, LOOP.close + 0.4, LOOP.close + 1.2);
+  const col = t >= LOOP.close ? GREEN : RED, x0 = LOOP.from * SP, x1 = LOOP.to * SP;
+  const at = q => [lerp(x0, x1, q), -50 - Math.sin(Math.PI * q) * 14];
+  ctx.globalAlpha = fade; ctx.fillStyle = col;
+  const s = Math.max(3 * dpr, cam.z * 1.1);
+  for (let q = 0; q <= grow; q += 1 / 36) {
+    if (Math.round(q * 36) % 2) continue;   // dashes
+    const [sx, sy] = toScreen(cam, ...at(q));
+    ctx.fillRect(Math.round(sx - s / 2), Math.round(sy - s / 2), Math.ceil(s), Math.ceil(s));
+  }
+  if (grow >= 1) {
+    const [ax, ay] = at(1);
+    drawGrid(cam, LOOP_BACK, ax - 1, ay + 3, 3, 5, () => col);        // arrowhead pointing back
+    const [lx, ly] = toScreen(cam, ...at(0.5)), size = Math.round(clamp(cam.z * 2, 8 * dpr, 13 * dpr));
+    ctx.font = `${size}px "Press Start 2P"`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.fillText(t >= LOOP.close ? 'FIXED' : 'RETRY', lx, ly - s * 1.5);
+  }
+  ctx.globalAlpha = 1;
+}
+function drawTrack(t, cam) {
+  const off = reduceMotion ? 0 : (t * 10) % 6;   // chevrons march left → right
+  for (let j = 0; j < N - 1; j++) {
+    const x0 = j * SP + 12, x1 = (j + 1) * SP - 12, lit = trackLit(j, t);
+    for (let x = x0 + off; x <= x1; x += 6) {
+      const f = (x - x0) / (x1 - x0);
+      const col = f < lit ? mixHex(AGENTS[j].color, AGENTS[j + 1].color, f) : C.chevron;
+      drawGrid(cam, CHEVRON, x, 7, 3, 5, () => col);
+    }
+  }
+}
+// Name tags ride under every Kiro for the whole film; they only step aside during a character screen,
+// where the name is already shown large.
+function labelAlpha(i, t) {
+  let a = t < T.reveal + 1 ? seg(t, 1.25 + i * 0.12, 1.6 + i * 0.12) : 1;   // pop in with the title line-up
+  const act = activeAgent(t);
+  if (act) a *= 1 - seg(act.u, 0.2, 0.6) * (1 - seg(t, act.v.jobsEnd - 0.3, act.v.jobsEnd));
+  return a * (1 - seg(t, DURATION - 0.6, DURATION));
+}
+function drawLabels(t, cam) {
+  const size = Math.round(clamp(cam.z * 2.2, 8 * dpr, 14 * dpr)), pad = Math.round(size * 0.6);
+  const gy = toScreen(cam, 0, 0)[1] + Math.max(26 * dpr, cam.z * 8.5);
+  ctx.font = `${size}px "Press Start 2P"`; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  AGENTS.forEach((a, i) => {
+    const alpha = labelAlpha(i, t);
+    if (alpha <= 0) return;
+    const x = toScreen(cam, i * SP, 0)[0];
+    if (x < -200 * dpr || x > W + 200 * dpr) return;
+    const num = `0${i + 1}`, name = a.role.replace('THE ', '');
+    const wNum = ctx.measureText(num + ' ').width, w = wNum + ctx.measureText(name).width + pad * 2, h = size + pad * 1.6;
+    const lx = Math.round(x - w / 2), ly = Math.round(gy);
+    ctx.globalAlpha = clamp(alpha);
+    ctx.fillStyle = C.ink; ctx.fillRect(lx - 2 * dpr, ly - 2 * dpr, w + 4 * dpr, h + 4 * dpr);
+    ctx.fillStyle = C.card; ctx.fillRect(lx, ly, w, h);
+    ctx.fillStyle = a.color; ctx.fillText(num, lx + pad, ly + h / 2 + dpr);
+    ctx.fillStyle = C.ink; ctx.fillText(name, lx + pad + wNum, ly + h / 2 + dpr);
+  });
+  ctx.globalAlpha = 1;
+}
+function drawFlash(t) {
+  const c = T.dolly[1], a = t < c ? seg(t, c - 0.22, c) : 1 - seg(t, c, c + 0.35);
+  if (a <= 0) return;
+  ctx.globalAlpha = a; ctx.fillStyle = C.flash; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1;
+}
+
+/* ================= Envelopes, bursts, speed lines ================= */
+function drawEnvelope(x, y, angle, scale, seal) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(angle);
+  K.LETTER.forEach((row, j) => [...row].forEach((c, i) => {
+    ctx.fillStyle = c === 'S' ? seal : K.PAL[c];
+    ctx.fillRect((i - 4.5) * scale, (j - 3.5) * scale, scale + 0.5, scale + 0.5);
+  }));
+  ctx.restore();
+}
+
+// tag on a short string, swinging behind the envelope as it flies
+function drawTag(x, y, label, swing, unit) {
+  const len = 14 * unit, ax = x, ay = y + 3.5 * unit * 1.6;
+  const tx = ax + Math.sin(swing) * len, ty = ay + Math.cos(swing) * len;
+  ctx.strokeStyle = C.ink; ctx.lineWidth = Math.max(1, 1.5 * dpr);
+  ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(tx, ty); ctx.stroke();
+  ctx.save(); ctx.translate(tx, ty); ctx.rotate(swing * -0.6);
+  ctx.font = `${Math.round(10 * dpr)}px "Press Start 2P"`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  const w = ctx.measureText(label).width + 14 * dpr, hgt = 18 * dpr;
+  ctx.fillStyle = C.ink; ctx.fillRect(-w / 2 - 3 * dpr, -3 * dpr, w + 6 * dpr, hgt + 6 * dpr);
+  ctx.fillStyle = C.card; ctx.fillRect(-w / 2, 0, w, hgt);
+  ctx.fillStyle = C.ink; ctx.fillText(label, -w / 2 + 7 * dpr, hgt / 2 + dpr);
+  ctx.restore();
+}
+
+// pixel comet trail: squares shrinking and fading along the path already travelled
+function drawTrail(points, colour, size) {
+  points.forEach(([x, y], k) => {
+    const f = 1 - k / points.length, s = Math.max(2, size * f);
+    ctx.globalAlpha = 0.75 * f; ctx.fillStyle = colour;
+    ctx.fillRect(Math.round(x - s / 2), Math.round(y - s / 2), Math.ceil(s), Math.ceil(s));
+  });
+  ctx.globalAlpha = 1;
+}
+
+function drawRing(x, y, age, colour, maxR) {
+  if (age < 0 || age > 0.5) return;
+  const k = age / 0.5;
+  ctx.globalAlpha = 1 - k; ctx.strokeStyle = colour; ctx.lineWidth = Math.max(2, 4 * dpr * (1 - k));
+  ctx.beginPath(); ctx.arc(x, y, maxR * E.outCubic(k), 0, Math.PI * 2); ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+function drawBurst(cam, t, t0, wx, wy, colours, n = 18) {
+  const age = t - t0;
+  if (age < 0 || age > 0.9) return;
+  for (let k = 0; k < n; k++) {
+    const ang = k * 2.399 + t0, sp = 40 + hash(k + t0) * 50;
+    const x = wx + Math.cos(ang) * sp * age, y = wy + Math.sin(ang) * sp * age - 30 * age + 90 * age * age;
+    const [sx, sy] = toScreen(cam, x, y), s = Math.max(2, 1.6 * cam.z) * (1 - age);
+    ctx.globalAlpha = 1 - age / 0.9; ctx.fillStyle = colours[k % colours.length];
+    ctx.fillRect(Math.round(sx), Math.round(sy), Math.ceil(s), Math.ceil(s));
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawMessages(t, cam) {
+  const unit = clamp(cam.z * 1.1, 6 * dpr, 11 * dpr);   // envelope pixel size on screen
+
+  // the human's message: from the SEND button, in an arc, to the sleeping Planner
+  if (t >= T.send && t < T.hit + 0.05) {
+    const r = $('#human-send').getBoundingClientRect();
+    const ax = (r.left + r.width / 2) * dpr, ay = r.top * dpr;
+    const [bx, by] = toScreen(cam, 0, -30);
+    const at = q => [lerp(ax, bx, q), lerp(ay, by, q) - Math.sin(Math.PI * q) * H * 0.24];
+    const q = E.inOutSine(seg(t, T.send, T.hit)), [x, y] = at(q);
+    const [x2, y2] = at(Math.min(1, q + 0.02)), [x1, y1] = at(Math.max(0, q - 0.02));
+    drawTrail(Array.from({ length: 12 }, (_, k) => at(Math.max(0, q - (k + 1) * 0.025))), '#4f6fd0', unit * 1.6);
+    const sc = E.outBack(seg(t, T.send, T.send + 0.2)) * (1 - E.inCubic(seg(t, T.hit - 0.12, T.hit)));
+    drawEnvelope(x, y, clamp(Math.atan2(y2 - y1, x2 - x1), -0.5, 0.5), unit * sc, '#4f6fd0');
+    if (sc > 0.6) drawTag(x, y, 'CHECKOUT', Math.sin(t * 9) * 0.35 - 0.25, unit / 1.6);
+  }
+  drawRing(...toScreen(cam, 0, -30), t - T.hit, '#4f6fd0', 26 * cam.z);
+  drawBurst(cam, t, T.hit, 0, -30, ['#ffffff', C.paper, '#4f6fd0']);
+
+  // hand-offs between Kiros (red for the trip back round the loop)
+  FLOW.forEach(v => {
+    if (v.to === undefined) return;
+    const col = v.back ? RED : AGENTS[v.a].color;
+    if (t >= v.handStart && t < v.end) {
+      const f = flight(v, t);
+      // faint dotted guide showing where it's heading
+      ctx.fillStyle = col;
+      for (let q = Math.ceil(f.p * 30) / 30; q <= 1; q += 1 / 30) {
+        const [gx, gy] = toScreen(cam, f.at(q).x, f.at(q).y);
+        ctx.globalAlpha = 0.35 * Math.min(1, f.h / 0.3); ctx.fillRect(Math.round(gx) - 2 * dpr, Math.round(gy) - 2 * dpr, 4 * dpr, 4 * dpr);
+      }
+      ctx.globalAlpha = 1;
+      if (f.p > 0) drawTrail(Array.from({ length: 14 }, (_, k) => {
+        const g = f.at(Math.max(0, f.p - (k + 1) * 0.022)); return toScreen(cam, g.x, g.y);
+      }), col, unit * 1.8);
+      const [x, y] = toScreen(cam, f.x, f.y);
+      drawEnvelope(x, y, f.angle, unit * f.scale, col);
+      if (f.scale > 0.6) drawTag(x, y, v.out, Math.sin(t * 9 + v.k) * 0.35 - f.angle * 0.8 + (v.back ? 0.2 : -0.2), unit / 1.6);
+    }
+    drawRing(...toScreen(cam, v.to * SP, -34), t - v.end, col, 26 * cam.z);
+    drawBurst(cam, t, v.end, v.to * SP, -34, ['#ffffff', C.paper, col]);
+  });
+  // each job's result: a sparkle in the Kiro's colour, or red when a check fails
+  FLOW.forEach(v => v.jobs.forEach(j => drawBurst(cam, t, j.start + V.stamp, v.a * SP, -30, [j.fail ? RED : AGENTS[v.a].color, '#ffffff'], 24)));
+}
+
+function drawSpeedLines(t, cam) {
+  if (reduceMotion) return;
+  const vel = (cameraAt(t + 0.016).x - cameraAt(t - 0.016).x) / 0.032 * cam.z / dpr;   // screen px/s
+  const v = Math.abs(vel), dir = Math.sign(vel) || 1;
+  const a = clamp((v - 1400) / 6000, 0, 0.32);
+  if (a <= 0) return;
+  ctx.fillStyle = C.ink;
+  for (let k = 0; k < 26; k++) {
+    const y = hash(k) * H, len = (120 + hash(k + 9) * 380) * dpr * (a / 0.32);
+    const run = (hash(k + 3) * W * 1.5 + t * 900 * dpr * (k % 3 + 1)) % (W * 1.5);
+    const x = dir > 0 ? W * 1.25 - run : run - W * 0.25 - len;
+    ctx.globalAlpha = a * (0.4 + hash(k + 5) * 0.6);
+    ctx.fillRect(Math.round(x), Math.round(y), Math.round(len), Math.max(2, Math.round(2 * dpr)));
+  }
+  ctx.globalAlpha = 1;
+}
+
+/* ================= Typography layers ================= */
+const css = (el, o, tf) => { el.style.opacity = o; el.style.transform = tf || ''; };
+function splitLetters(el) {
+  el.innerHTML = [...el.dataset.text].map(ch => `<span>${ch === ' ' ? '&nbsp;' : ch}</span>`).join('');
+  return [...el.children];
+}
+const titleEl = $('#title'), titleLetters = splitLetters(titleEl.querySelector('.title-main'));
+const finalEl = $('#final'), finalLetters = splitLetters(finalEl.querySelector('.title-main'));
+
+function dropLetters(letters, t, t0) {
+  letters.forEach((s, k) => {
+    const p = E.outBack(seg(t, t0 + k * 0.06, t0 + k * 0.06 + 0.45));
+    css(s, clamp(p * 2), `translateY(${(1 - p) * -90}px)`);
+  });
+}
+
+function updateTitles(t) {
+  // opening title
+  const out = E.inCubic(seg(t, 3.55, 4.15));
+  css(titleEl, t < 4.2 ? 1 - out : 0, `translateY(${-out * 80}px) scale(${1 + out * 0.08})`);
+  dropLetters(titleLetters, t, 0.15);
+  titleEl.querySelector('.title-sub').style.opacity = seg(t, 1.6, 2.2);
+  // end card
+  const f0 = T.finale + 1.7;
+  css(finalEl, t >= f0 - 0.1 ? 1 - seg(t, DURATION - 0.6, DURATION) : 0);
+  dropLetters(finalLetters, t, f0);
+  finalEl.querySelector('.title-sub').style.opacity = seg(t, f0 + 1.3, f0 + 1.9);
+  // small corner bug while on paper
+  css($('#bug'), Math.min(seg(t, 4.6, 5.2), 1 - seg(t, T.finale + 0.8, T.finale + 1.2)) * 0.55);   // hidden while the big title is up
+}
+
+const stepsEl = $('#steps');
+stepsEl.innerHTML = AGENTS.map(a => `<li style="--c:${a.color}">${a.step}</li>`).join('') + '<li class="retry">RETRY 1</li>';
+const stepEls = [...stepsEl.children].slice(0, N), retryEl = stepsEl.querySelector('.retry');
+function updateSteps(t) {
+  css(stepsEl, Math.min(seg(t, T.humanIn - 0.3, T.humanIn + 0.2), 1 - seg(t, T.finale + 0.6, T.finale + 1.0)), 'translateX(-50%)');
+  const act = activeAgent(t);
+  stepEls.forEach((li, k) => {
+    const active = act && act.i === k && t < act.v.jobsEnd;
+    const done = VISITS_OF[k].some(v => t >= v.jobsEnd);
+    li.className = active ? 'active' : done ? 'done' : '';
+  });
+  retryEl.style.opacity = clamp(seg(t, LOOP.start, LOOP.start + 0.3) * (1 - seg(t, LOOP.close + 0.6, LOOP.close + 1.0)));
+  retryEl.classList.toggle('fixed', t >= LOOP.close);
+  retryEl.textContent = t >= LOOP.close ? 'FIXED' : 'RETRY 1';
+}
+
+const humanEl = $('#human'), humanText = $('#human-text'), sendEl = $('#human-send');
+function updateHuman(t) {
+  const pin = E.outCubic(seg(t, T.humanIn, T.humanIn + 0.5)), pout = E.inCubic(seg(t, T.send + 0.15, T.send + 0.6));
+  css(humanEl, Math.min(pin, 1 - pout), `translate(${(1 - pin) * -60}px, ${pout * 30}px) scale(${1 - pout * 0.08})`);
+  humanText.textContent = HUMAN_MSG.slice(0, Math.round(HUMAN_MSG.length * seg(t, ...T.type)));
+  const press = t >= T.send - 0.12 && t < T.send + 0.12;
+  sendEl.style.transform = press ? 'translateY(3px)' : '';
+  sendEl.style.background = press ? AGENTS[0].color : '';
+}
+
+const cardEl = $('#card'), tasksEl = $('#tasks'), stampEl = $('#stamp'), listEl = $('#task-list');
+let shownAgent = -1, shownJob = null, lineEls = [], cardParts = [];
+function fillAgent(i) {
+  const a = AGENTS[i];
+  shownAgent = i;
+  document.documentElement.style.setProperty('--accent', a.color);
+  $('#card-num').textContent = `AGENT 0${i + 1} / 0${N}`;
+  $('#card-role').textContent = a.role.replace('THE ', '');   // the name reads "PLANNER KIRO"
+  $('#card-about').textContent = a.about;
+  $('#card-rows').innerHTML = `<dt>Gear</dt><dd>${a.gear}</dd><dt>Ability</dt><dd>${a.ability}</dd>`;
+  cardParts = [$('#card-about'), ...$('#card-rows').children];
+}
+function fillJob(j) {
+  shownJob = j;
+  const v = j.v, role = AGENTS[v.a].role.replace('THE ', '');
+  $('#tasks-head').innerHTML = `${role} KIRO · <span class="kind ${j.kind.toLowerCase()}">${j.kind}</span>${v.jobs.length > 1 ? ` ${j.n + 1} OF ${v.jobs.length}` : ''}`;
+  $('#job-title').textContent = j.title;
+  listEl.innerHTML = j.lines.map((_, k) => `<li><span class="ix">${String(k + 1).padStart(2, '0')}</span><span class="txt"></span><span class="st"></span></li>`).join('');
+  lineEls = [...listEl.children].map(li => ({ li, txt: li.querySelector('.txt'), st: li.querySelector('.st') }));
+  stampEl.textContent = j.stamp;
+  stampEl.style.setProperty('--stamp', j.fail ? RED : j.kind === 'CHECK' ? GREEN : AGENTS[v.a].color);
+}
+
+function updateAgentText(t) {
+  const act = activeAgent(t);
+  if (!act) { css(cardEl, 0); css(tasksEl, 0); css(stampEl, 0); return; }
+  const { i, u, v } = act;
+  if (i !== shownAgent) fillAgent(i);
+
+  // character card (first visit only): name, description and gear arrive in sequence, then slide away
+  const cin = v.intro ? E.outCubic(seg(u, V.card, V.card + 0.45)) : 0, cout = E.inCubic(seg(u, V.cardOut, V.cardOut + 0.4));
+  css(cardEl, Math.min(cin, 1 - cout), `translateX(${(1 - cin) * 80 + cout * 120}px)`);
+  cardParts.forEach((el, k) => { const p = E.outCubic(seg(u, V.card + 0.35 + k * 0.1, V.card + 0.8 + k * 0.1)); css(el, p, `translateY(${(1 - p) * 14}px)`); });
+
+  // job log: the current task/check, its lines typed in and ticked off; a failing check ends on a red cross
+  const j = [...v.jobs].reverse().find(x => t >= x.start - 0.1);
+  if (!j) { css(tasksEl, 0); css(stampEl, 0); return; }
+  if (j !== shownJob) fillJob(j);
+  const jt = t - j.start;
+  const tin = seg(jt, -0.1, 0.2), tout = E.inCubic(seg(jt, V.jobOut, V.job));
+  css(tasksEl, Math.min(tin, 1 - tout), `translateX(${(1 - tin) * 40 + tout * 120}px)`);
+  const span = 2.45 / j.lines.length;
+  lineEls.forEach((el, k) => {
+    const t0 = 0.15 + k * span, p = E.outBack(seg(jt, t0, t0 + 0.35));
+    css(el.li, clamp(p * 1.5), `translateX(${(1 - p) * 60}px)`);
+    el.txt.textContent = j.lines[k].slice(0, Math.round(j.lines[k].length * seg(jt, t0 + 0.05, t0 + 0.45)));
+    const settled = jt >= t0 + span * 0.8, bad = !!j.fail && k === j.lines.length - 1;   // strict booleans: toggle(x, undefined) would flip every frame
+    el.st.classList.toggle('ok', settled && !bad);
+    el.st.classList.toggle('bad', settled && bad);
+    el.li.classList.toggle('bad', settled && bad);
+    el.st.textContent = settled || jt < t0 ? '' : '.'.repeat(1 + Math.floor(t * 6) % 3);
+  });
+
+  // result stamp
+  const sin = E.outBack(seg(jt, V.stamp, V.stamp + 0.3)), sout = seg(jt, V.jobOut - 0.15, V.jobOut + 0.1);
+  css(stampEl, Math.min(clamp(sin * 2), 1 - sout), `rotate(-7deg) scale(${lerp(1.8, 1, sin)})`);
+}
+
+/* ================= Frame ================= */
+function resize() {
+  dpr = Math.min(2, window.devicePixelRatio || 1);
+  W = Math.round(innerWidth * dpr); H = Math.round(innerHeight * dpr);
+  if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+  ctx.imageSmoothingEnabled = false;
+}
+
+function render(t) {
+  resize();
+  const cam = cameraAt(t);
+  drawWorld(t, cam);
+  // character screen layering: the featured Kiro stands in front of its panel, everyone else behind it
+  const act = activeAgent(t), front = new Set(act ? [act.i] : []);
+  const back = new Set(AGENTS.map((_, i) => i).filter(i => !front.has(i)));
+  drawTrack(t, cam);
+  drawLoop(t, cam);
+  drawKiros(t, cam, back);
+  drawPanel(t);
+  drawKiros(t, cam, front);
+  drawLabels(t, cam);
+  drawMessages(t, cam);
+  drawSpeedLines(t, cam);
+  drawFlash(t);
+  updateTitles(t);
+  updateHuman(t);
+  updateAgentText(t);
+  updateSteps(t);
+}
+
+/* ================= Player ================= */
+const params = new URLSearchParams(location.search);
+let time = clamp(parseFloat(params.get('t')) || 0, 0, DURATION);
+let playing = !(params.has('paused') || reduceMotion);
+const playBtn = $('#play'), scrub = $('#scrub'), timeEl = $('#time');
+const fmt = s => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+
+$('#marks').innerHTML = CHAPTERS.map(([name, at]) => `<i style="left:${(at / DURATION) * 100}%" title="${name}"></i>`).join('');
+function setPlaying(p) { playing = p; playBtn.textContent = p ? '❚❚' : '▶'; playBtn.setAttribute('aria-label', p ? 'Pause' : 'Play'); wake(); }
+playBtn.addEventListener('click', () => setPlaying(!playing));
+$('#restart').addEventListener('click', () => { time = 0; setPlaying(true); });
+scrub.addEventListener('input', () => { time = (scrub.value / 10000) * DURATION; });
+const themeBtn = $('#theme');
+function setTheme(name) {
+  applyTheme(name);
+  themeBtn.textContent = C.label;
+  themeBtn.setAttribute('aria-label', `Colour theme: ${themeBtn.textContent.toLowerCase()} (T to switch)`);
+  try { localStorage.setItem('ai-in-test-theme-v2', themeName); } catch (e) { /* not remembered */ }
+}
+if (false) themeBtn.addEventListener('click', () => setTheme(THEME_ORDER[(THEME_ORDER.indexOf(themeName) + 1) % THEME_ORDER.length]));
+{ let saved = null; try { saved = localStorage.getItem('ai-in-test-theme-v2'); } catch (e) { /* ignore */ } setTheme('duskDark'); }
+const toggleFull = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.())?.catch?.(() => {});
+$('#full').addEventListener('click', toggleFull);
+addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); setPlaying(!playing); }
+  if (e.code === 'ArrowRight') time = Math.min(DURATION, time + 5);
+  if (e.code === 'ArrowLeft') time = Math.max(0, time - 5);
+  if (e.code === 'KeyF') toggleFull();
+  wake();
+});
+// controls fade away while playing; any movement brings them back
+let idleTimer = 0;
+function wake() { document.body.classList.remove('idle'); clearTimeout(idleTimer); idleTimer = setTimeout(() => { if (playing) document.body.classList.add('idle'); }, 2500); }
+addEventListener('mousemove', wake);
+addEventListener('touchstart', wake);
+
+const avatar = $('#avatar').getContext('2d');
+K.HUMAN.forEach((r, y) => [...r].forEach((c, x) => { if (c !== '.') { avatar.fillStyle = K.HUMAN_PAL[c]; avatar.fillRect(x, y, 1, 1); } }));
+
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.1, (now - last) / 1000);
+  last = now;
+  if (playing) { time += dt; if (time >= DURATION) time = 0; }
+  render(time);
+  if (document.activeElement !== scrub) scrub.value = Math.round((time / DURATION) * 10000);
+  timeEl.textContent = `${fmt(time)} / ${fmt(DURATION)}`;
+  requestAnimationFrame(frame);
+}
+window.__film = { seek: s => { time = s; render(time); }, DURATION, T, FLOW, LOOP };   // used by screenshot checks
+(document.fonts ? document.fonts.ready : Promise.resolve()).then(() => { wake(); requestAnimationFrame(frame); });
+})();
+
+</script>
+</body>
+</html>
